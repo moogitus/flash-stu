@@ -6,7 +6,7 @@ from flashfftconv import FlashFFTConv
 
 from flash_stu.utils.numerics import nearest_power_of_two
 
-
+'''
 def get_hankel(seq_len: int, use_hankel_L: bool = False) -> np.ndarray:
     entries = np.arange(1, seq_len + 1, dtype=np.float64)
     i_plus_j = entries[:, None] + entries[None, :]
@@ -35,6 +35,79 @@ def get_spectral_filters(
     sigma, phi = sigma[-K:], phi[:, -K:]
     phi *= sigma ** 0.25
     return torch.tensor(phi, device=device, dtype=dtype)
+'''
+
+def get_hankel_vals(
+  seq_len: int, 
+  use_hankel_L: bool = False,
+  device: torch.device = None      
+) -> torch.Tensor:
+    
+    k = torch.arange(2, 2 * seq_len + 1, dtype=torch.float64, device=device)
+
+    if use_hankel_L:
+        sgn = (-1.0) ** (k - 2.0) + 1.0
+        denom = (k + 3.0) * (k - 1.0) * (k + 1.0)
+        vals = sgn * (8.0 / denom)
+    elif not use_hankel_L:
+        vals = 2.0 / (k**3 - k)
+    else:
+        raise ValueError("use_hankel_L must be a boolean")
+     
+    return vals
+
+def implicitHankelRPCholesky(
+    seq_len: int,
+    k: int,
+    use_hankel_L: bool = False, 
+    tol: float = 1e-8,
+    device: torch.device = None,
+    greedy: bool = True
+) -> torch.Tensor:
+    n = seq_len
+    hankel_vals = get_hankel_vals(n, use_hankel_L, device=device)
+    diag_init = hankel_vals[::2]
+    diag = diag_init
+    energy = torch.zeros_like(diag)
+    pivots = []
+    trace_init = torch.sum(diag)
+    max_init = torch.max(diag)
+    F = torch.zeros((n, k), device=device, dtype=diag.dtype)
+    for i in range(k):
+        if greedy:
+            pivot_id = torch.argmax(diag)       
+        else:
+            trace = torch.sum(diag)
+            if trace < tol * trace_init: break
+            pivot_id = np.random.choice(range(n), p=diag/trace)
+        pivot = diag[pivot_id]
+        if pivot < tol * max_init:
+            break
+        else: 
+            pivots.append(pivot_id)
+        g = hankel_vals[pivot_id:pivot_id + n]
+        g = g - F[:,:i] @ torch.conj(F[pivot_id,0:i]).T
+        F[:, i] = g / torch.sqrt(g[pivot_id])
+        energy +=  torch.abs(F[:, i]) ** 2
+        diag = diag_init - energy
+        diag = torch.clamp(diag, 0)
+    rank = len(pivots)
+    F = F[:, :rank]
+    return F, pivots
+
+def get_spectral_filters(
+    seq_len: int, 
+    k: int, 
+    use_hankel_L: bool = False, 
+    device: torch.device = None,
+    dtype: torch.dtype = torch.bfloat16,
+    greedy: bool = True
+) -> torch.Tensor:
+    assert torch.cuda.is_available(), "CUDA is required."
+    F, p = implicitHankelRPCholesky(seq_len, k, 1e-8, use_hankel_L, device, greedy)
+    U, S, _ = torch.linalg.svd(F, full_matrices=False)
+    phi = U * (S ** 0.5).unsqueeze(0)
+    return phi.to(device=device, dtype=dtype)   
 
 def convolve(u: torch.Tensor, v: torch.Tensor, n: int, use_approx: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
     bsz, seq_len, d_in = u.shape

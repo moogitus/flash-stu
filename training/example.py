@@ -148,7 +148,7 @@ def main():
         "use_activation_checkpointing": use_activation_checkpointing,
     }
     
-    phi = get_spectral_filters(seq_len, num_eigh, use_hankel_L, device, torch_dtype)
+    phi = get_spectral_filters(seq_len, num_eigh, use_hankel_L, device, torch_dtype, greedy=False)
     model = FlashSTU(config, phi)
     if torch_compile:
         model = torch.compile(model)
