@@ -54,7 +54,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = find_packages()
+packages = ['flash_stu']
 
 # ===============================
 # Project URLs
