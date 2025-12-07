@@ -79,7 +79,7 @@ def implicitHankelRPCholesky(
         else:
             trace = torch.sum(diag)
             if trace < tol * trace_init: break
-            pivot_id = np.random.choice(range(n), p=diag/trace)
+            pivot_id = torch.multinomial(diag/trace, 1).item()
         pivot = diag[pivot_id]
         if pivot < tol * max_init:
             break

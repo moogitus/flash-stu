@@ -7,7 +7,7 @@ class MLP(nn.Module):
         super().__init__()
         dtype = dtype if dtype is not None else config.torch_dtype
         self.hidden_size = config.n_embd
-        self.intermediate_size = config.n_embd * config.mlp_scale
+        self.intermediate_size = int(config.n_embd * getattr(config, 'mlp_scale', 4))
         self.gate_proj = nn.Linear(
             self.hidden_size, self.intermediate_size, bias=config.bias, dtype=dtype
         )
